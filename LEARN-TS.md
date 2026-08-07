@@ -49,6 +49,17 @@
 | `import { a } from "mod"` | `from mod import a` | 导入特定成员 |
 | `import * as m from "mod"` | `import mod` | 整包导入 |
 | `export function f()` | 模块级函数（天然导出） | 导出 |
+| `readFile(path, "utf-8")` | `open(path).read()` | 读文件（返回字符串） |
+| `writeFile(path, content, "utf-8")` | `open(path, "w").write(content)` | 写文件（覆盖） |
+| `mkdir(dir, { recursive: true })` | `os.makedirs(dir, exist_ok=True)` | 创建目录（含父目录） |
+| `dirname(path)` | `os.path.dirname(path)` | 取父目录路径 |
+| `text.split("\n")` | `text.split("\n")` | 按换行切成数组 |
+| `arr.slice(a, b)` | `arr[a:b]` / `str[a:b]` | 切片（含 a 不含 b） |
+| `str.indexOf(x)` | `str.index(x)` | 找 x 第一次出现的位置 |
+| `str.indexOf(x, start)` | `str.index(x, start)` | 从 start 位置往后找 |
+| `arr.map((x, i) => f(x, i))` | `[f(x, i) for i, x in enumerate(arr)]` | 遍历时带下标 |
+| `arr.join("\n")` | `"\n".join(arr)` | 数组拼成字符串 |
+| `typeof x === "number"` | `isinstance(x, (int, float))` | 判断类型 |
 
 ## 2. TS 特有、Python 没有的概念（重点记）
 
@@ -113,3 +124,65 @@ for round in range(MAX_TOOL_ROUNDS):
 ## 4. 遇到看不懂的怎么办
 1. 在本文件 Ctrl+F 搜关键字
 2. 搜不到就问 Claude："这个 TS 语法用 Python 怎么说？"
+
+## 5. M3 工具开发实战笔记（read/write/edit/bash）
+
+### 5.1 文件读写三件套（最常用）
+```ts
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+
+const text = await readFile(path, "utf-8");          // 读文件 → 字符串
+await writeFile(path, content, "utf-8");             // 写文件 → 覆盖
+await mkdir(dirname(path), { recursive: true });     // 建父目录（写多层路径前先调）
+```
+> `node:fs/promises` = Python 的 `pathlib` / `os`，**全是异步的**，都要 `await`。
+
+### 5.2 字符串查找与切片（edit 工具的核心）
+```ts
+const first = content.indexOf(oldText);              // 第一次出现的位置，找不到返回 -1
+const second = content.indexOf(oldText, first + 1);  // 从 first 往后再找一次 → 判断是否唯一
+
+// 替换：前段 + 新内容 + 后段
+const newContent = content.slice(0, first) + newText + content.slice(first + oldText.length);
+```
+> **`indexOf` 找不到返回 `-1`**（Python 是抛异常）——这就是为什么代码要判断 `if (first === -1)`。
+
+### 5.3 工具开发的三条铁律（pi 的真实做法）
+1. **错误要返回给 LLM，不要抛异常**——LLM 看到错误信息才能调整策略（比如 edit 找不到 old_text，LLM 会重新 read 再试）。
+2. **edit 的 old_text 必须唯一匹配**——否则拒绝。防止 LLM 想改一处却误改了文件里另一处相同的内容。
+3. **说明书（description）写清楚**——LLM 靠它判断"这个任务该用哪个工具"。description 越准，工具被用得越对。
+
+### 5.4 工具的基本结构（每个工具都是这个模板）
+```ts
+export const def: ToolDef = {   // 1. 说明书：给 LLM 看的
+  type: "function",
+  function: { name: "xxx", description: "干什么用", parameters: { ... } },
+};
+export async function run(args: Record<string, unknown>): Promise<string> {  // 2. 实现
+  // 取参数 → try/catch 执行 → 返回字符串（成功或错误信息）
+}
+```
+
+## 6. agent 工作原理（面试必答，务必理解）
+
+### 6.1 工具循环流程（agent 的灵魂）
+```
+用户输入
+  → 发请求给 LLM（附上所有工具的说明书 def）
+  → LLM 回复两种情况之一：
+      ① 纯文字      → 这就是最终答案，结束
+      ② tool_calls  → LLM 说"我要调 X 工具，参数是 Y"
+  → agent 执行工具，拿到结果
+  → 把结果作为 role:"tool" 的消息回喂给 LLM（必须带 tool_call_id 配对）
+  → 回到"发请求"这一步，循环
+  → 直到 LLM 给纯文字答案，或超过最大轮数
+```
+**终止条件**：LLM 不再返回 tool_calls，而是给纯文字。**`tool_call_id` 必须对上**，否则 API 报错。
+
+### 6.2 EOF（End Of File）与管道输入
+- **EOF = 输入到尽头**。程序读输入就像从水管接水，EOF = 水管被关死（不会再有水了）。
+- 触发时机：按 Ctrl+D / Ctrl+Z，或**管道输入**（`printf 'hi' | npm run dev`）读完了。
+- Node 的 readline 遇到 EOF 时，`rl.question()` **不是返回空，而是直接抛异常**。
+- 所以代码要 `try { input = await rl.question(...) } catch { break }` 接住，否则崩溃。
+- 交互式终端（手动打字）不会 EOF，程序一直等输入。
