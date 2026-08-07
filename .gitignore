@@ -10,6 +10,9 @@ build/
 .env.*
 *.local
 
+# 个人画像（仅本地，不上传远端）
+PROFILE.md
+
 # 日志
 *.log
 npm-debug.log*
