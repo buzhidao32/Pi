@@ -261,6 +261,19 @@ const numbered = selected.map((line, i) => `${start + i + 1}\t${line}`).join("\n
 - `selected` = `lines.slice(start, end)` 截出的内容数组
 - 行号 = `start+i+1`，是给人/LLM 看的，不是下标
 
+### 5.6.3 line/i 为什么不用预先定义？（map 自动传参）
+> `map((line, i) => ...)` 里 `line` 和 `i` **不需要**你先 `const line = ...`。因为 `map` 会遍历数组，**自动**把每个元素传给 `line`、把下标传给 `i`。
+> Python 类比：`for line in lines` / `for i, line in enumerate(lines)` 里的变量都是 for 自动给的。
+> 所以：`line` = 当前元素内容（取决于文件内容），`i` = 当前下标。变量存什么看数据，代码不写死。
+> **取内容要写 `lines[start]`（下标→内容）；光写 `start` 只是下标数字。**
+
+### 5.6.4 完整理解链（读 read.ts 的 5 步）
+1. `lines` = 整个文件切成数组
+2. `start` / `end` = 下标数字（offset-1 换算）
+3. `lines.slice(start, end)` = 按下标切出内容数组
+4. `line` / `i` = map 自动给的（内容 / 下标）
+5. 行号 `start+i+1` = 给人看的数字，不是下标
+
 ### 5.7 分页读文件：offset/limit 与 1-indexed↔0-indexed
 ```ts
 const start = Math.max(0, offset - 1);        // 人的"第几行"→ 数组下标（offset-1）
