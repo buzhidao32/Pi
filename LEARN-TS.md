@@ -206,6 +206,16 @@ const newContent = content.slice(0, first) + newText + content.slice(first + old
 ```
 > **`indexOf` 找不到返回 `-1`**（Python 是抛异常）——这就是为什么代码要判断 `if (first === -1)`。
 
+### 5.2.1 重要误区：`slice(0, first)` 不是"删除"，是"取出"
+> **`slice(a, b)` 是复制出一段给你用，不是从原串里删掉。** 原字符串不变。
+> 例：`"12345".indexOf("3")` = 2，替换 3 为 6：`"12345".slice(0,2)` = "12"，`"12345".slice(3)` = "45"，拼接 `"12"+"6"+"45"` = "12645"。
+> **前面的 "12" 没丢**——它被 slice 取出来放回新串最前面了。0 = 字符串开头（保留开头到替换点的内容），不是"切掉 0 位"。
+> Python 完全一样：`"12345"[0:2]` 原串不变。
+
+### 5.2.2 edit 的安全机制（唯一匹配）
+> 先 `indexOf(old)` 找第一次，再从 `first+1` 往后 `indexOf` 找第二次。**只要第二次找到（≠-1），就拒绝替换**——防止文件里有多处相同内容时改错。宁可让 LLM 提供更多上下文。
+> 例：`"apple banana apple"` 改 apple 会报"出现多次"；改 banana 才成功。
+
 ### 5.3 工具开发的三条铁律（pi 的真实做法）
 1. **错误要返回给 LLM，不要抛异常**——LLM 看到错误信息才能调整策略（比如 edit 找不到 old_text，LLM 会重新 read 再试）。
 2. **edit 的 old_text 必须唯一匹配**——否则拒绝。防止 LLM 想改一处却误改了文件里另一处相同的内容。
@@ -221,6 +231,20 @@ export async function run(args: Record<string, unknown>): Promise<string> {  // 
   // 取参数 → try/catch 执行 → 返回字符串（成功或错误信息）
 }
 ```
+
+### 5.4.1 `args` 到底装什么？（不是用户对话）
+> **`args` = LLM 调用工具时附带的参数**，由 agent 循环 `JSON.parse` 后传入。
+> 流程：LLM 回复 `tool_calls[].function.arguments`（一段 JSON 字符串）→ agent 里 `JSON.parse(它)` 得到对象 → `tool.run(args)` 传入。
+```js
+// args 长这样（普通对象）
+{ path: "a.txt", old_text: "3", new_text: "6" }
+// run 里取：args.path / args.old_text / args.new_text
+```
+> 用户的话 → 发给 LLM → LLM 决定调工具并附参数 → 参数才是 args。
+
+### 5.4.2 `Promise<string>` 是什么
+> `Promise<T>` = "这个 async 函数未来会给一个 T"。`run(): Promise<string>` 就是"最终返回字符串"。
+> 调用方用 `await` 解开拿到里面的字符串。Python 类比：async 函数不用显式写返回类型，TS 要求写。
 
 ### 5.5 parameters / properties 是什么（JSON Schema）
 > **`parameters` = 描述"这个工具要的参数整体长什么样"（顶层）；`properties` = 里面具体有哪些字段。** 两者都是给 LLM 看的"填表说明"，不是代码。
