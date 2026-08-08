@@ -121,11 +121,53 @@ for round in range(MAX_TOOL_ROUNDS):
         messages.append({"role": "tool", "content": result, "tool_call_id": tool_call.id})
 ```
 
-## 4. 遇到看不懂的怎么办
+## 4. async/await：什么时候加？（超高频疑问）
+
+### 4.1 核心规则
+> **凡是函数里要"等待某件慢的事"（读文件、发网络、等定时器、调另一个 async 函数），这个函数就得加 `async`。纯计算（算数、字符串、数组）不需要。**
+
+### 4.2 慢操作清单（函数体里出现任何一个就必须 async）
+| 慢操作 | Node 写法 | Python 对应 |
+|---|---|---|
+| 读文件 | `await readFile(...)` | asyncio 读文件 |
+| 写文件 | `await writeFile(...)` | asyncio 写文件 |
+| 发网络请求 | `await fetch(...)` | `requests` / `aiohttp` |
+| 执行命令 | `await execAsync(...)` | `subprocess.run` |
+| 等待 | `await new Promise(...)` | `await asyncio.sleep()` |
+| 调另一个 async 函数 | `await chat(...)` | `await some_async()` |
+
+### 4.3 关键：async 会"传染"
+> **你一旦 `await` 了一个 async 函数，你所在的函数也必须变成 async。这个"传染"一路向上蔓延。**
+
+项目里的传染链（看箭头，async 从最底层慢操作一路传到 main）：
+```
+main()           是 async —— 因为 await 了 agentLoop()
+  └─ agentLoop() 是 async —— 因为 await 了 chat() 和 tool.run()
+       └─ chat()     是 async —— 因为 await 了 fetch()（网络）
+       └─ tool.run() 是 async —— 因为 await 了 readFile/writeFile/exec
+```
+
+### 4.4 反例（不用 async）
+```ts
+// 纯数组操作，不碰慢东西 → 不用 async
+export function getToolDefs(): ToolDef[] {
+  return Object.values(tools).map((t) => t.def);
+}
+// 取参数、转字符串、判断 → 都不用 await
+const path = String(args.path ?? "");
+if (!path) return "错误：缺少 path 参数";
+```
+
+### 4.5 判断口诀
+> **函数体里出现 `readFile` / `writeFile` / `fetch` / `exec` / `question` 等词 → 必须 async。只有纯计算 → 不用。**
+
+自测：①`a+b`→不用 ②`await readFile(...)`→要 ③`text.trim().toUpperCase()`→不用 ④`await fetch(...)`→要
+
+## 5. 遇到看不懂的怎么办
 1. 在本文件 Ctrl+F 搜关键字
 2. 搜不到就问 Claude："这个 TS 语法用 Python 怎么说？"
 
-## 5. M3 工具开发实战笔记（read/write/edit/bash）
+## 6. M3 工具开发实战笔记（read/write/edit/bash）
 
 ### 5.1 文件读写三件套（最常用）
 ```ts
@@ -164,8 +206,7 @@ export async function run(args: Record<string, unknown>): Promise<string> {  // 
 }
 ```
 
-## 6. agent 工作原理（面试必答，务必理解）
-
+## 7. agent 工作原理（面试必答，务必理解）
 ### 6.1 工具循环流程（agent 的灵魂）
 ```
 用户输入
