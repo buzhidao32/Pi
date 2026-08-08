@@ -126,6 +126,22 @@ for round in range(MAX_TOOL_ROUNDS):
 ### 4.1 核心规则
 > **凡是函数里要"等待某件慢的事"（读文件、发网络、等定时器、调另一个 async 函数），这个函数就得加 `async`。纯计算（算数、字符串、数组）不需要。**
 
+### 4.1.1 async vs await 的区别（最易混）
+> **`async` 用在"函数定义"上（身份）；`await` 用在"调用"上（动作）。**
+
+| 场景 | 用 async? | 用 await? |
+|---|---|---|
+| 定义函数 | ✅ 函数名后加 | ❌ |
+| 调用 async 函数 | ❌ | ✅ 函数名前加 |
+| 调用 readFile/writeFile/fetch | ❌ | ✅ |
+
+```ts
+async function run(args) {          // 定义：用 async
+  const text = await readFile(path); // 调用：用 await
+}
+```
+> 口诀：**`async` 是身份，`await` 是动作**。函数生下来是不是异步的用 async，用的时候要不要等用 await。
+
 ### 4.2 慢操作清单（函数体里出现任何一个就必须 async）
 | 慢操作 | Node 写法 | Python 对应 |
 |---|---|---|
@@ -205,6 +221,40 @@ export async function run(args: Record<string, unknown>): Promise<string> {  // 
   // 取参数 → try/catch 执行 → 返回字符串（成功或错误信息）
 }
 ```
+
+### 5.5 parameters / properties 是什么（JSON Schema）
+> **`parameters` = 描述"这个工具要的参数整体长什么样"（顶层）；`properties` = 里面具体有哪些字段。** 两者都是给 LLM 看的"填表说明"，不是代码。
+```ts
+parameters: {                          // 整张表
+  type: "object",                      // 参数是一个对象 {}
+  properties: {                        // 表里的栏目
+    path:   { type: "string" },        // 栏目1：path 是字符串
+    offset: { type: "number" },        // 栏目2：offset 是数字
+  },
+  required: ["path"],                  // 哪些必填（path 必填，offset 可不填）
+}
+```
+> `required` 里没列的 = 可选（有默认值）。
+
+### 5.6 map 的第二个参数 i（下标）—— 数字哪来的
+> **`map((line, i) => ...)` 里的 `i` 是 map 自动给的"当前是第几个元素"（下标 0,1,2…），不用自己声明。** 类似 Python 的 `enumerate`。
+```ts
+// 目的：给每行加"真实行号"前缀，让 LLM 能准确引用"第 4 行有个 bug"
+const numbered = selected.map((line, i) => `${start + i + 1}\t${line}`).join("\n");
+```
+> `start` = 本次读取的起始下标（0-indexed），`i` = 第几个元素，`+1` 转成 1-indexed 行号。
+> 例：offset=3 → start=2，第1个元素 i=0 → 行号 `2+0+1=3`；第2个元素 i=1 → `2+1+1=4`。
+> `\t` 是 Tab（显示成多个空格），`3\tline3` 渲染出来就是 `3    line3`。
+
+### 5.7 分页读文件：offset/limit 与 1-indexed↔0-indexed
+```ts
+const start = Math.max(0, offset - 1);        // 人的"第几行"→ 数组下标（offset-1）
+const end = Math.min(start + limit, lines.length);  // 防越界（取较小值）
+const selected = lines.slice(start, end);     // 切片：含 start 不含 end
+```
+> - **1-indexed**：人/LLM 从 1 数（第1行）；**0-indexed**：程序下标从 0 数。LLM 说 offset=3，程序用 `3-1=2`。
+> - `slice(a,b)` 含 a 不含 b（和 Python `arr[a:b]` 一样）。
+> - `Math.max` / `Math.min` 是保护：防止 offset 传负数、end 超出文件长度。
 
 ## 7. agent 工作原理（面试必答，务必理解）
 ### 6.1 工具循环流程（agent 的灵魂）
