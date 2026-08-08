@@ -246,6 +246,21 @@ const numbered = selected.map((line, i) => `${start + i + 1}\t${line}`).join("\n
 > 例：offset=3 → start=2，第1个元素 i=0 → 行号 `2+0+1=3`；第2个元素 i=1 → `2+1+1=4`。
 > `\t` 是 Tab（显示成多个空格），`3\tline3` 渲染出来就是 `3    line3`。
 
+### 5.6.1 重大误区：`line` 是变量名，不是文本 "line"
+> `${line}` 里的 `line` 是**变量**，存的是数组里当前那个元素的**内容**。如果文件每行恰好叫 "line1/line2/line3"，`line` 的值就是 "line3"，输出 `3\tline3`。如果内容是 a/b/c/d/e，`line` 的值是 "c"/"d"，输出 `3\tc`、`4\td`。
+> **别把"变量名"和"变量值"混淆**：`line` 是名字，`line` 存的这行内容才是输出的东西。
+
+### 5.6.2 三列对齐表（下标/内容/行号 别混）
+```
+内容:     a      b      c      d      e
+下标:     0      1      2      3      4     ← 数组下标（0-indexed）
+行号:     1      2      3      4      5     ← 人的数法（1-indexed）
+```
+- `lines` = 整个文件数组（["a","b","c","d","e"]）
+- `start` = 下标数字（offset-1），不是内容
+- `selected` = `lines.slice(start, end)` 截出的内容数组
+- 行号 = `start+i+1`，是给人/LLM 看的，不是下标
+
 ### 5.7 分页读文件：offset/limit 与 1-indexed↔0-indexed
 ```ts
 const start = Math.max(0, offset - 1);        // 人的"第几行"→ 数组下标（offset-1）
