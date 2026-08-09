@@ -13,6 +13,9 @@ build/
 # 个人画像（仅本地，不上传远端）
 PROFILE.md
 
+# 个人学习笔记（仅本地）
+LEARN-TS.md
+
 # 会话数据（运行时产生，不进 git）
 sessions/
 
