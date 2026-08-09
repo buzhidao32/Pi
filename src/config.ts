@@ -49,7 +49,8 @@ const active = MOCK ? providers.mock : providers[PROVIDER];
 
 export const API_URL = active.apiUrl;
 export const API_KEY = active.apiKey;
-export const MODEL = active.model;
+// 模型：支持被命令行 --model 覆盖（通过 MY_PI_MODEL 环境变量传递）
+export const MODEL = process.env.MY_PI_MODEL ?? active.model;
 
 // 最多允许连续调多少次工具，防止死循环
 export const MAX_TOOL_ROUNDS = 8;
