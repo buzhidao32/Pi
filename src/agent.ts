@@ -21,14 +21,32 @@ export async function agentLoop(messages: Message[]): Promise<void> {
   const toolDefs = getToolDefs();
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const { message, usage } = await chat(messages, toolDefs);
+    // 流式显示：标记是否已打印过 "pi> " 前缀（只打一次）
+    let printedPrompt = false;
+
+    const { message, usage } = await chat(messages, toolDefs, (delta) => {
+      // onDelta 回调：每收到一段增量文本就执行
+      // 第一次进来先打印 "pi> "，之后直接追加增量文本
+      if (!printedPrompt) {
+        process.stdout.write("\npi> ");
+        printedPrompt = true;
+      }
+      process.stdout.write(delta); // 不带换行，一个字一个字蹦出来
+    });
+
+    // 流式结束时补一个换行（如果确实打印了内容）
+    if (printedPrompt) {
+      process.stdout.write("\n");
+    }
+
     if (usage) {
       console.log(`\n[token: 输入${usage.prompt_tokens} 输出${usage.completion_tokens}]`);
     }
 
     // 情况 1：LLM 没有要求调用工具 → 这就是最终答案，结束循环
+    // 注意：内容已经通过 onDelta 流式打印过了，这里不需要再 console.log
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      console.log(`\npi> ${message.content}\n`);
+      console.log("");
       return;
     }
 
