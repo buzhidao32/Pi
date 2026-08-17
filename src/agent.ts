@@ -12,7 +12,8 @@
 
 import { chat } from "./llm";
 import { tools, getToolDefs } from "./tools";
-import { MAX_TOOL_ROUNDS } from "./config";
+import { executeToolCalls, toToolMessages } from "./execute";
+import { MAX_TOOL_ROUNDS, TOOL_EXECUTION } from "./config";
 import type { Message } from "./types";
 
 // 处理一轮完整的用户请求：可能多次调用工具
@@ -55,31 +56,12 @@ export async function agentLoop(messages: Message[]): Promise<void> {
     // 否则 LLM 会困惑"谁发起的这些调用"
     messages.push(message);
 
-    for (const toolCall of message.tool_calls) {
-      console.log(`\n[调用工具] ${toolCall.function.name}(${toolCall.function.arguments})`);
-
-      // 查表找到工具并执行
-      const tool = tools[toolCall.function.name];
-      let result: string;
-      if (!tool) {
-        result = `错误：未知工具 ${toolCall.function.name}`;
-      } else {
-        try {
-          const args = JSON.parse(toolCall.function.arguments); // JSON 字符串 → 对象
-          result = await tool.run(args);
-        } catch (err) {
-          result = `工具执行出错: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      }
-
-      // 关键：把工具结果作为 "tool" 角色消息回喂，必须带 tool_call_id
-      // 告诉 LLM："这是对刚才那个调用的回应"
-      messages.push({
-        role: "tool",
-        content: result,
-        tool_call_id: toolCall.id,
-      });
-    }
+    // 深度复刻③：交给执行器（见 src/execute.ts）——它会：
+    //   调度层：全局串行 或 有工具声明 "sequential" → 串行，否则并行
+    //   两阶段：先串行"准备"（查表/解析参数），再并行"执行"（Promise.all）
+    //   按序回喂：结果保持调用顺序，配 tool_call_id 返回
+    const results = await executeToolCalls(message.tool_calls, tools, TOOL_EXECUTION);
+    messages.push(...toToolMessages(results));
     // 回到循环头，LLM 会看到工具结果，再决定下一步
   }
 

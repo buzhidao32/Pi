@@ -10,6 +10,8 @@
 // 密钥都从环境变量读，绝不写死在代码里（安全）。
 // ============================================================
 
+import type { ToolExecutionMode } from "./types";
+
 // ---- 提供商选择 ----
 const PROVIDER = process.env.PROVIDER ?? "opencode";
 
@@ -54,6 +56,13 @@ export const MODEL = process.env.MY_PI_MODEL ?? active.model;
 
 // 最多允许连续调多少次工具，防止死循环
 export const MAX_TOOL_ROUNDS = 8;
+
+// 工具执行模式（深度复刻③，对标 pi 的 toolExecution 配置项）：
+//   "parallel"   = 默认，一批工具调用同时跑
+//   "sequential" = 强制一个一个跑（排错时用，看哪个工具先动）
+// 命令行加 --sequential 会设置环境变量 TOOL_EXECUTION（和 --model 同套路）
+export const TOOL_EXECUTION: ToolExecutionMode =
+  process.env.TOOL_EXECUTION === "sequential" ? "sequential" : "parallel";
 
 if (!API_KEY) {
   console.error(`错误：缺少 ${PROVIDER} 提供商的环境变量 API key`);

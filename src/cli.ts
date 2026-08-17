@@ -29,6 +29,7 @@ function printHelp() {
   my-pi                         交互模式（默认）
   my-pi -p "一句话"             非交互：直接处理这句话后退出
   my-pi --model <name>          指定模型
+  my-pi --sequential            强制工具一个个串行执行（默认并行）
   my-pi -h / --help             显示本帮助
 
 示例:

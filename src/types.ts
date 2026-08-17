@@ -28,6 +28,21 @@ export interface ToolCall {
   };
 }
 
+// 一个工具的"形状"：说明书 def + 实现 run + （可选）执行模式
+// LLM 只看 def（说明书），agent 按名字查表用 run（实现）
+export interface Tool {
+  def: ToolDef;
+  run: (args: Record<string, unknown>) => Promise<string>;
+  // 默认并行；声明 "sequential" = "我必须在别的工具之前/之后独占执行"
+  executionMode?: ToolExecutionMode;
+}
+
+// 工具执行模式（深度复刻③：对标 pi 的 ToolExecutionMode）
+// "parallel"   = 可以和别的工具一起并行跑（默认）
+// "sequential" = 必须独占执行，其他工具都得等它（比如 bash 改了全局状态、
+//                edit 要对同一个文件"先读后写"，并行会互相踩脚）
+export type ToolExecutionMode = "parallel" | "sequential";
+
 // OpenAI function calling 的工具定义格式（给 LLM 看的说明书）
 export interface ToolDef {
   type: "function";

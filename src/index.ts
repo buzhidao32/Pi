@@ -4,6 +4,7 @@
 // 新增：CLI 参数解析（深度复刻②）
 //   -p / --print "..."  非交互：直接处理这句话，跑完退出
 //   --model xxx         指定模型
+//   --sequential        强制工具串行执行（深度复刻③）
 //   -h / --help         显示帮助
 //
 // process.argv = Node 给我们的命令行参数数组
@@ -36,6 +37,9 @@ function parseArgs(args: string[]): CliOptions {
       // 把模型名传给 config（config 读 MY_PI_MODEL 环境变量）
       process.env.MY_PI_MODEL = args[i + 1];
       i++;
+    } else if (arg === "--sequential") {
+      // 强制工具串行执行（config 读 TOOL_EXECUTION 环境变量）
+      process.env.TOOL_EXECUTION = "sequential";
     }
     // 其他参数忽略（简化版）
   }
