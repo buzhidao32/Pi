@@ -12,6 +12,7 @@
 
 import { readFile } from "node:fs/promises";
 import type { ToolDef } from "../types";
+import { truncateLine, MAX_LINE_CHARS } from "./truncate";
 
 // 一次最多返回多少行（防止超长文件把上下文撑爆）
 const DEFAULT_MAX_LINES = 200;
@@ -22,7 +23,7 @@ export const def: ToolDef = {
   function: {
     name: "read",
     description:
-      "读取一个文件的内容。支持 offset（从第几行开始，第 1 行是 1）和 limit（最多读几行）。文件太长时用 offset 继续读。",
+      "读取一个文件的内容。支持 offset（从第几行开始，第 1 行是 1）和 limit（最多读几行）。文件太长时用 offset 继续读；单行超过 1000 字符会自动截断。",
     parameters: {
       type: "object",
       properties: {
@@ -54,7 +55,10 @@ export async function run(args: Record<string, unknown>): Promise<string> {
     const selected = lines.slice(start, end);
 
     // 行号前缀：让 LLM 知道每行是第几行，方便它引用
-    const numbered = selected.map((line, i) => `${start + i + 1}\t${line}`).join("\n");
+    // 深度复刻④：每行再套一层 truncateLine（单行巨长不撑爆上下文）
+    const numbered = selected
+      .map((line, i) => `${start + i + 1}\t${truncateLine(line, MAX_LINE_CHARS)}`)
+      .join("\n");
 
     // 如果文件还有更多内容没读完，提示用 offset 继续
     const more = lines.length - end;
