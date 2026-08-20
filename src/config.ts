@@ -64,6 +64,12 @@ export const MAX_TOOL_ROUNDS = 8;
 export const TOOL_EXECUTION: ToolExecutionMode =
   process.env.TOOL_EXECUTION === "sequential" ? "sequential" : "parallel";
 
+// ---- 上下文压缩（深度复刻⑤，对标 pi 的 maxContextTokens / keepRecentTokens）----
+// 历史对话总字符数超过它就触发"先压缩再继续"（保守估算 ≈ 4000 tokens）
+export const MAX_CONTEXT_CHARS = 16000;
+// 压缩时保留最近多少字符（让模型还能看到刚发生的那几轮对话）
+export const RECENT_KEEP_CHARS = 5000;
+
 if (!API_KEY) {
   console.error(`错误：缺少 ${PROVIDER} 提供商的环境变量 API key`);
   console.error("设置方法（PowerShell）：$env:OPENCODE_API_KEY=\"sk-xxx\"");

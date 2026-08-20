@@ -13,8 +13,28 @@
 import { chat } from "./llm";
 import { tools, getToolDefs } from "./tools";
 import { executeToolCalls, toToolMessages } from "./execute";
-import { MAX_TOOL_ROUNDS, TOOL_EXECUTION } from "./config";
+import { compactHistory, shouldCompact } from "./compact";
+import { MAX_TOOL_ROUNDS, TOOL_EXECUTION, MAX_CONTEXT_CHARS, RECENT_KEEP_CHARS } from "./config";
 import type { Message } from "./types";
+
+// 深度复刻⑤：真实摘要——把历史纯文本发给 LLM，让它压缩成要点
+async function summarizeWithLLM(historyText: string): Promise<string> {
+  const { message, usage } = await chat(
+    [
+      {
+        role: "system",
+        content:
+          "你是对话压缩助手。把用户给出的历史对话压缩成要点摘要。必须保留：关键决定、涉及的文件路径、错误信息、当前进度。不要编造不存在的内容，不要回答问题，只输出摘要。",
+      },
+      { role: "user", content: historyText },
+    ],
+    // 不传 tools：压缩不需要工具
+  );
+  if (usage) {
+    console.log(`\n[压缩耗时: 输入${usage.prompt_tokens} 输出${usage.completion_tokens}]`);
+  }
+  return message.content;
+}
 
 // 处理一轮完整的用户请求：可能多次调用工具
 export async function agentLoop(messages: Message[]): Promise<void> {
@@ -22,6 +42,17 @@ export async function agentLoop(messages: Message[]): Promise<void> {
   const toolDefs = getToolDefs();
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // 深度复刻⑤：每次问 LLM 前，先看历史是不是太长，太长了先压缩再问。
+    // 原地换血（splice 替换整个数组），cli.ts 手里的同一个数组也跟着变，
+    // 之后 saveSession 存下来的就是压缩后的历史。
+    if (shouldCompact(messages, MAX_CONTEXT_CHARS)) {
+      const compacted = await compactHistory(messages, summarizeWithLLM, RECENT_KEEP_CHARS);
+      if (compacted !== messages) {
+        messages.splice(0, messages.length, ...compacted);
+        console.log("\n[上下文过长，已压缩：更早的对话变成了一段摘要]");
+      }
+    }
+
     // 流式显示：标记是否已打印过 "pi> " 前缀（只打一次）
     let printedPrompt = false;
 
