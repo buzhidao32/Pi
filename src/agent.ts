@@ -13,12 +13,15 @@
 import { chat } from "./llm";
 import { tools, getToolDefs } from "./tools";
 import { executeToolCalls, toToolMessages } from "./execute";
-import { compactHistory, shouldCompact } from "./compact";
+import { compactHistory, shouldCompact, type SummarizeHandlers } from "./compact";
 import { MAX_TOOL_ROUNDS, TOOL_EXECUTION, MAX_CONTEXT_CHARS, RECENT_KEEP_CHARS } from "./config";
 import type { Message } from "./types";
 
-// 深度复刻⑤：真实摘要——把历史纯文本发给 LLM，让它压缩成要点
-async function summarizeWithLLM(historyText: string): Promise<string> {
+// 深度复刻⑦：两个摘要函数（对标 pi 的 SUMMARIZATION / UPDATE_SUMMARIZATION_PROMPT）
+//   initial：第一次压缩，从零把历史压成要点
+//   update ：以后压缩，旧摘要(<previous-summary>) + 新增历史一起喂，增量合并
+
+async function summarizeInitial(historyText: string): Promise<string> {
   const { message, usage } = await chat(
     [
       {
@@ -30,11 +33,33 @@ async function summarizeWithLLM(historyText: string): Promise<string> {
     ],
     // 不传 tools：压缩不需要工具
   );
-  if (usage) {
-    console.log(`\n[压缩耗时: 输入${usage.prompt_tokens} 输出${usage.completion_tokens}]`);
-  }
+  if (usage) console.log(`\n[压缩耗时: 输入${usage.prompt_tokens} 输出${usage.completion_tokens}]`);
   return message.content;
 }
+
+async function summarizeUpdate(previousSummary: string, newHistoryText: string): Promise<string> {
+  const { message, usage } = await chat(
+    [
+      {
+        role: "system",
+        content:
+          "你是对话压缩助手。下面给出已有的对话摘要 <previous-summary> 和自上次摘要以来新增的对话 <new-messages>。请把新信息合并进旧摘要，输出一份更新后的完整摘要。规则：保留旧摘要里仍然相关的所有信息；加入新对话里的新进展、决定、文件路径、错误信息；过时内容可以删除；不要编造。只输出摘要。",
+      },
+      {
+        role: "user",
+        content: `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n<new-messages>\n${newHistoryText}\n</new-messages>`,
+      },
+    ],
+  );
+  if (usage) console.log(`\n[压缩耗时(增量): 输入${usage.prompt_tokens} 输出${usage.completion_tokens}]`);
+  return message.content;
+}
+
+// 摘要函数表：塞给 compactHistory 注入用（测试时可以换成假的）
+export const summarizers: SummarizeHandlers = {
+  initial: summarizeInitial,
+  update: summarizeUpdate,
+};
 
 // 处理一轮完整的用户请求：可能多次调用工具
 export async function agentLoop(messages: Message[]): Promise<void> {
@@ -46,7 +71,7 @@ export async function agentLoop(messages: Message[]): Promise<void> {
     // 原地换血（splice 替换整个数组），cli.ts 手里的同一个数组也跟着变，
     // 之后 saveSession 存下来的就是压缩后的历史。
     if (shouldCompact(messages, MAX_CONTEXT_CHARS)) {
-      const compacted = await compactHistory(messages, summarizeWithLLM, RECENT_KEEP_CHARS);
+      const compacted = await compactHistory(messages, summarizers, RECENT_KEEP_CHARS);
       if (compacted !== messages) {
         messages.splice(0, messages.length, ...compacted);
         console.log("\n[上下文过长，已压缩：更早的对话变成了一段摘要]");
